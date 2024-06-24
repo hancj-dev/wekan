@@ -67,11 +67,9 @@ def get_req_body_elems(obj, elems):
         get_req_body_elems(obj.right, elems)
     elif obj.type in ('ReturnStatement', 'UnaryExpression'):
         get_req_body_elems(obj.argument, elems)
-    elif obj.type == 'Literal':
-        pass
     elif obj.type == 'Identifier':
         return obj.name
-    elif obj.type == 'FunctionDeclaration':
+    elif obj.type in ['Literal', 'FunctionDeclaration', 'ThrowStatement']:
         pass
     else:
         print(obj)
@@ -821,6 +819,11 @@ def parse_schemas(schemas_dir):
         for filename in files:
             path = os.path.join(root, filename)
             context = parse_file(path)
+
+            if context is None:
+              # the file doesn't contain a schema (see above)
+              continue
+
             program = context.program
 
             current_schema = None

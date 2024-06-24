@@ -1,5 +1,31 @@
 @ECHO OFF
 
+REM # ------------------- HOWTO ---------------------
+REM # https://github.com/wekan/wekan/wiki/Offline
+
+REM #-------------------- REQUIRED SETTINGS START --------------------
+
+REM # Writable path required to exist and be writable for attachments to migrate and work correctly
+SET WRITABLE_PATH=..
+
+REM # MongoDB database URL required
+SET MONGO_URL=mongodb://127.0.0.1:27017/wekan
+
+REM # If port is 80, must change ROOT_URL to: http://YOUR-WEKAN-SERVER-IPv4-ADDRESS , like http://192.168.0.100
+REM # If port is not 80, must change ROOT_URL to: http://YOUR-WEKAN-SERVER-IPv4-ADDRESS:YOUR-PORT-NUMBER , like http://192.168.0.100:2000
+REM # If ROOT_URL is not correct, these do not work: translations, uploading attachments.
+SET ROOT_URL=http://192.168.0.21
+
+REM # Must change to YOUR-PORT-NUMBER:
+SET PORT=80
+
+REM #------------------- REQUIRED SETTINGS END ----------------------
+
+REM #-------------------- OPTIONAL SETTINGS START -------------------
+REM # If at public Internet, required different settings:
+REM # - For ROOT_URL: https://github.com/wekan/wekan/wiki/Settings
+REM # - For SSL/TLS, also at above wiki right menu: config for Caddy/Nginx/Apache
+
 REM ------------------------------------------------------------
 
 REM # Debug OIDC OAuth2 etc.
@@ -7,19 +33,31 @@ REM SET DEBUG=true
 
 REM ------------------------------------------------------------
 
-SET ROOT_URL=http://localhost
-SET PORT=80
-SET MONGO_URL=mongodb://127.0.0.1:27017/wekan
+REM # ==== AWS S3 FOR FILES ====
+REM # Any region. For example:
+REM #   us-standard,us-west-1,us-west-2,
+REM #   eu-west-1,eu-central-1,
+REM #   ap-southeast-1,ap-northeast-1,sa-east-1
+REM #
+REM SET S3='{"s3":{"key": "xxx", "secret": "xxx", "bucket": "xxx", "region": "eu-west-1"}}'
 
 REM # https://github.com/wekan/wekan/wiki/Troubleshooting-Mail
 REM SET MAIL_URL=smtps://username:password@email-smtp.eu-west-1.amazonaws.com:587/
 REM SET MAIL_FROM="Wekan Boards <info@example.com>"
+REM # Currently MAIL_SERVICE is not in use.
+REM SET MAIL_SERVICE=Outlook365
+REM SET MAIL_SERVICE_USER=firstname.lastname@hotmail.com
+REM SET MAIL_SERVICE_PASSWORD=SecretPassword
 
 REM # ==== NUMBER OF SEARCH RESULTS PER PAGE BY DEFAULT ====
 REM SET RESULTS_PER_PAGE=20
 
 REM # If you disable Wekan API with false, Export Board does not work.
 SET WITH_API=true
+
+REM # ==== AFTER OIDC LOGIN, ADD USERS AUTOMATICALLY TO THIS BOARD ID ====
+REM # https://github.com/wekan/wekan/pull/5098
+REM SET DEFAULT_BOARD_ID=abcd1234
 
 REM # ==== RICH TEXT EDITOR IN CARD COMMENTS ====
 REM # https://github.com/wekan/wekan/pull/2560
@@ -42,6 +80,19 @@ REM SET ACCOUNTS_LOCKOUT_KNOWN_USERS_FAILURE_WINDOW=15
 REM SET ACCOUNTS_LOCKOUT_UNKNOWN_USERS_FAILURES_BERORE=3
 REM SET ACCOUNTS_LOCKOUT_UNKNOWN_USERS_LOCKOUT_PERIOD=60
 REM SET ACCOUNTS_LOCKOUT_UNKNOWN_USERS_FAILURE_WINDOW=15
+
+REM # ==== ACCOUNT OPTIONS ====
+REM SET ACCOUNTS_COMMON_LOGIN_EXPIRATION_IN_DAYS=90
+
+REM # ==== Allow configuration to validate uploaded attachments ====
+REM SET ATTACHMENTS_UPLOAD_EXTERNAL_PROGRAM="avscan {file}"
+REM SET ATTACHMENTS_UPLOAD_MIME_TYPES="image/*,text/*"
+REM SET ATTACHMENTS_UPLOAD_MAX_SIZE=5000000
+
+REM # ==== Allow configuration to validate uploaded avatars ====
+REM SET AVATARS_UPLOAD_EXTERNAL_PROGRAM="avscan {file}"
+REM SET AVATARS_UPLOAD_MIME_TYPES="image/*"
+REM SET AVATARS_UPLOAD_MAX_SIZE=500000
 
 REM # ==== NOTIFICATION TRAY AFTER READ DAYS BEFORE REMOVE =====
 REM # Number of days after a notification is read before we remove it.
@@ -91,6 +142,10 @@ REM # The address of the server where Matomo is hosted.
 REM # example: - MATOMO_ADDRESS=https://example.com/matomo
 REM SET MATOMO_ADDRESS=
 
+REM # ==== METRICS ALLOWED IP ADDRESSES ====
+REM # https://github.com/wekan/wekan/wiki/Metrics
+REM SET METRICS_ALLOWED_IP_ADDRESSES=192.168.0.100,192.168.0.200
+
 REM # The value of the site ID given in Matomo server for Wekan
 REM # example: - MATOMO_SITE_ID=12345
 REM SET MATOMO_SITE_ID=
@@ -114,6 +169,12 @@ REM SET TRUSTED_URL=
 REM # What to send to Outgoing Webhook, or leave out. Example, that includes all that are default: cardId,listId,oldListId,boardId,comment,user,card,commentId .
 REM # example: WEBHOOKS_ATTRIBUTES=cardId,listId,oldListId,boardId,comment,user,card,commentId
 REM SET WEBHOOKS_ATTRIBUTES=
+
+REM ------------------------------------------------------------
+
+REM ## ==== AUTOLOGIN WITH OIDC/OAUTH2 ====
+REM ## https://github.com/wekan/wekan/wiki/autologin
+REM # SET OIDC_REDIRECTION_ENABLED=true
 
 REM ------------------------------------------------------------
 
@@ -162,7 +223,7 @@ REM # OAUTH2 ID Token Whitelist Fields.
 REM SET OAUTH2_ID_TOKEN_WHITELIST_FIELDS=[]
 
 REM # OAUTH2 Request Permissions.
-REM SET OAUTH2_REQUEST_PERMISSIONS='openid profile email'
+REM SET OAUTH2_REQUEST_PERMISSIONS=openid profile email
 
 REM # OAuth2 ID Mapping
 REM SET OAUTH2_ID_MAP=
@@ -190,10 +251,45 @@ REM # LDAP_HOST : The host server for the LDAP server
 REM # example : LDAP_HOST=localhost
 REM SET LDAP_HOST=
 
+REM #-----------------------------------------------------------------
+REM # ==== LDAP AD Simple Auth ====
+REM # Set to true, if you want to connect with Active Directory by Simple Authentication.
+REM # When using AD Simple Auth, LDAP_BASEDN is not needed.
+REM SET LDAP_AD_SIMPLE_AUTH=true
+
+REM #-----------------------------------------------------------------
+REM # === LDAP User Authentication ===
+REM #
+REM # a) Option to login to the LDAP server with the user's own username and password, instead of
+REM #    an administrator key. Default: false (use administrator key).
+REM #
+REM # b) When using AD Simple Auth, set to true, when login user is used for binding,
+REM #    and LDAP_BASEDN is not needed.
+REM #
+REM # Example:
+REM SET LDAP_USER_AUTHENTICATION=true
+
+REM # Which field is used to find the user for the user authentication. Default: uid.
+REM SET LDAP_USER_AUTHENTICATION_FIELD=uid
+
+REM # === LDAP Default Domain ===
+REM #
+REM # a) In case AD SimpleAuth is configured, the default domain is appended to the given
+REM #    loginname for creating the correct username for the bind request to AD.
+REM #
+REM # b) The default domain of the ldap it is used to create email if the field is not map
+REM #     correctly with the LDAP_SYNC_USER_DATA_FIELDMAP
+REM #
+REM # Example :
+REM SET LDAP_DEFAULT_DOMAIN=mydomain.com
+
+REM #-----------------------------------------------------------------
+REM # ==== LDAP BASEDN Auth ====
 REM # LDAP_BASEDN : The base DN for the LDAP Tree
 REM # example : LDAP_BASEDN=ou=user,dc=example,dc=org
 REM SET LDAP_BASEDN=
 
+REM #-----------------------------------------------------------------
 REM # LDAP_LOGIN_FALLBACK : Fallback on the default authentication method
 REM # example : LDAP_LOGIN_FALLBACK=true
 REM SET LDAP_LOGIN_FALLBACK=false
@@ -264,12 +360,6 @@ REM SET LDAP_CA_CERT=
 REM # LDAP_REJECT_UNAUTHORIZED : Reject Unauthorized Certificate
 REM # example : LDAP_REJECT_UNAUTHORIZED=true
 REM SET LDAP_REJECT_UNAUTHORIZED=false
-
-REM # Option to login to the LDAP server with the user's own username and password, instead of an administrator key. Default: false (use administrator key).
-REM SET LDAP_USER_AUTHENTICATION=true
-
-REM # Which field is used to find the user for the user authentication. Default: uid.
-REM SET LDAP_USER_AUTHENTICATION_FIELD=uid
 
 REM # LDAP_USER_SEARCH_FILTER : Optional extra LDAP filters. Don't forget the outmost enclosing parentheses if needed
 REM # example : LDAP_USER_SEARCH_FILTER=
@@ -355,13 +445,12 @@ REM # LDAP_SYNC_USER_DATA_FIELDMAP :
 REM # example : LDAP_SYNC_USER_DATA_FIELDMAP={"cn":"name", "mail":"email"}
 REM SET LDAP_SYNC_USER_DATA_FIELDMAP=
 
+REM # The default domain of the ldap it is used to create email if the field is not map correctly
+REM # with the LDAP_SYNC_USER_DATA_FIELDMAP is defined in setting LDAP_DEFAULT_DOMAIN above.
+
 REM # LDAP_SYNC_GROUP_ROLES :
 REM # example :
 REM # SET LDAP_SYNC_GROUP_ROLES=
-
-REM # LDAP_DEFAULT_DOMAIN : The default domain of the ldap it is used to create email if the field is not map correctly with the LDAP_SYNC_USER_DATA_FIELDMAP
-REM # example :
-REM SET LDAP_DEFAULT_DOMAIN=
 
 REM # Enable/Disable syncing of admin status based on ldap groups:
 REM SET LDAP_SYNC_ADMIN_STATUS=true
@@ -417,5 +506,17 @@ REM SET SAML_PUBLIC_CERTFILE=
 REM SET SAML_IDENTIFIER_FORMAT=
 REM SET SAML_LOCAL_PROFILE_MATCH_ATTRIBUTE=
 REM SET SAML_ATTRIBUTES=
+
+REM # Wait spinner to use
+REM SET WAIT_SPINNER=Bounce
+
+REM # https://github.com/wekan/wekan/issues/3585#issuecomment-1021522132
+REM # Add more Node heap:
+REM # SET NODE_OPTIONS="--max_old_space_size=4096"
+REM # Add more stack. ulimit is not at Windows, stack-size is at Windows:
+REM #   bash -c "ulimit -s 65500; exec node --stack-size=65500 main.js"
+REM #node --stack-size=65500 main.js
+
+REM #-------------------- OPTIONAL SETTINGS END --------------------
 
 node main.js

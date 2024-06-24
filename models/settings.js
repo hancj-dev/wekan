@@ -1,3 +1,7 @@
+import { ReactiveCache } from '/imports/reactiveCache';
+import { TAPi18n } from '/imports/i18n';
+//var nodemailer = require('nodemailer');
+
 // Sandstorm context is detected using the METEOR_SETTINGS environment variable
 // in the package definition.
 const isSandstorm =
@@ -9,6 +13,13 @@ Settings.attachSchema(
   new SimpleSchema({
     disableRegistration: {
       type: Boolean,
+      optional: true,
+      defaultValue: false,
+    },
+    disableForgotPassword: {
+      type: Boolean,
+      optional: true,
+      defaultValue: false,
     },
     'mailServer.username': {
       type: String,
@@ -46,7 +57,19 @@ Settings.attachSchema(
       type: String,
       optional: false,
     },
+    spinnerName: {
+      type: String,
+      optional: true,
+    },
     hideLogo: {
+      type: Boolean,
+      optional: true,
+    },
+    hideCardCounterList: {
+      type: Boolean,
+      optional: true,
+    },
+    hideBoardMemberList: {
       type: Boolean,
       optional: true,
     },
@@ -55,6 +78,10 @@ Settings.attachSchema(
       optional: true,
     },
     customLoginLogoLinkUrl: {
+      type: String,
+      optional: true,
+    },
+    customHelpLinkUrl: {
       type: String,
       optional: true,
     },
@@ -75,6 +102,18 @@ Settings.attachSchema(
       optional: true,
     },
     customTopLeftCornerLogoHeight: {
+      type: String,
+      optional: true,
+    },
+    oidcBtnText: {
+      type: String,
+      optional: true,
+    },
+    mailDomainName: {
+      type: String,
+      optional: true,
+    },
+    legalNotice: {
       type: String,
       optional: true,
     },
@@ -121,15 +160,15 @@ Settings.helpers({
 });
 Settings.allow({
   update(userId) {
-    const user = Users.findOne(userId);
+    const user = ReactiveCache.getUser(userId);
     return user && user.isAdmin;
   },
 });
 
 if (Meteor.isServer) {
   Meteor.startup(() => {
-    Settings._collection._ensureIndex({ modifiedAt: -1 });
-    const setting = Settings.findOne({});
+    Settings._collection.createIndex({ modifiedAt: -1 });
+    const setting = ReactiveCache.getCurrentSetting();
     if (!setting) {
       const now = new Date();
       const domain = process.env.ROOT_URL.match(
@@ -155,7 +194,7 @@ if (Meteor.isServer) {
     }
     if (isSandstorm) {
       // At Sandstorm, Admin Panel has SMTP settings
-      const newSetting = Settings.findOne();
+      const newSetting = ReactiveCache.getCurrentSetting();
       if (!process.env.MAIL_URL && newSetting.mailUrl())
         process.env.MAIL_URL = newSetting.mailUrl();
       Accounts.emailTemplates.from = process.env.MAIL_FROM
@@ -203,19 +242,50 @@ if (Meteor.isServer) {
     ]);
   }
 
+  function loadOidcConfig(service){
+    check(service, String);
+    var config = ServiceConfiguration.configurations.findOne({service: service});
+    return config;
+  }
+
   function sendInvitationEmail(_id) {
-    const icode = InvitationCodes.findOne(_id);
-    const author = Users.findOne(Meteor.userId());
+    const icode = ReactiveCache.getInvitationCode(_id);
+    const author = ReactiveCache.getCurrentUser();
     try {
+      const fullName = ReactiveCache.getUser(icode.authorId)?.profile?.fullname || "";
+
       const params = {
         email: icode.email,
-        inviter: Users.findOne(icode.authorId).username,
+        inviter: fullName != "" ? fullName + " (" + ReactiveCache.getUser(icode.authorId).username + " )" : ReactiveCache.getUser(icode.authorId).username,
         user: icode.email.split('@')[0],
         icode: icode.code,
         url: FlowRouter.url('sign-up'),
       };
       const lang = author.getLanguage();
-
+/*
+      if (process.env.MAIL_SERVICE !== '') {
+        let transporter = nodemailer.createTransport({
+          service: process.env.MAIL_SERVICE,
+          auth: {
+            user: process.env.MAIL_SERVICE_USER,
+            pass: process.env.MAIL_SERVICE_PASSWORD
+          },
+        })
+        let info = transporter.sendMail({
+          to: icode.email,
+          from: Accounts.emailTemplates.from,
+          subject: TAPi18n.__('email-invite-register-subject', params, lang),
+          text: TAPi18n.__('email-invite-register-text', params, lang),
+        })
+      } else {
+        Email.send({
+          to: icode.email,
+          from: Accounts.emailTemplates.from,
+          subject: TAPi18n.__('email-invite-register-subject', params, lang),
+          text: TAPi18n.__('email-invite-register-text', params, lang),
+        });
+      }
+*/
       Email.send({
         to: icode.email,
         from: Accounts.emailTemplates.from,
@@ -226,6 +296,20 @@ if (Meteor.isServer) {
       InvitationCodes.remove(_id);
       throw new Meteor.Error('email-fail', e.message);
     }
+  }
+
+  function isNonAdminAllowedToSendMail(currentUser){
+    const currSett = ReactiveCache.getCurrentSetting();
+    let isAllowed = false;
+    if(currSett && currSett != undefined && currSett.disableRegistration && currSett.mailDomainName !== undefined && currSett.mailDomainName != ""){
+      for(let i = 0; i < currentUser.emails.length; i++) {
+        if(currentUser.emails[i].address.endsWith(currSett.mailDomainName)){
+          isAllowed = true;
+          break;
+        }
+      }
+    }
+    return isAllowed;
   }
 
   function isLdapEnabled() {
@@ -253,25 +337,28 @@ if (Meteor.isServer) {
 
   Meteor.methods({
     sendInvitation(emails, boards) {
+      let rc = 0;
       check(emails, [String]);
       check(boards, [String]);
 
-      const user = Users.findOne(Meteor.userId());
-      if (!user.isAdmin) {
+      const user = ReactiveCache.getCurrentUser();
+      if (!user.isAdmin && !isNonAdminAllowedToSendMail(user)) {
+        rc = -1;
         throw new Meteor.Error('not-allowed');
       }
       emails.forEach(email => {
         if (email && SimpleSchema.RegEx.Email.test(email)) {
           // Checks if the email is already link to an account.
-          const userExist = Users.findOne({ email });
+          const userExist = ReactiveCache.getUser({ email });
           if (userExist) {
+            rc = -1;
             throw new Meteor.Error(
               'user-exist',
               `The user with the email ${email} has already an account.`,
             );
           }
           // Checks if the email is already link to an invitation.
-          const invitation = InvitationCodes.findOne({ email });
+          const invitation = ReactiveCache.getInvitationCode({ email });
           if (invitation) {
             InvitationCodes.update(invitation, {
               $set: { boardsToBeInvited: boards },
@@ -291,6 +378,7 @@ if (Meteor.isServer) {
                 if (!err && _id) {
                   sendInvitationEmail(_id);
                 } else {
+                  rc = -1;
                   throw new Meteor.Error(
                     'invitation-generated-fail',
                     err.message,
@@ -301,19 +389,44 @@ if (Meteor.isServer) {
           }
         }
       });
+      return rc;
     },
 
     sendSMTPTestEmail() {
       if (!Meteor.userId()) {
         throw new Meteor.Error('invalid-user');
       }
-      const user = Meteor.user();
+      const user = ReactiveCache.getCurrentUser();
       if (!user.emails || !user.emails[0] || !user.emails[0].address) {
         throw new Meteor.Error('email-invalid');
       }
       this.unblock();
       const lang = user.getLanguage();
       try {
+/*
+        if (process.env.MAIL_SERVICE !== '') {
+          let transporter = nodemailer.createTransport({
+            service: process.env.MAIL_SERVICE,
+            auth: {
+              user: process.env.MAIL_SERVICE_USER,
+              pass: process.env.MAIL_SERVICE_PASSWORD
+            },
+          })
+          let info = transporter.sendMail({
+            to: user.emails[0].address,
+            from: Accounts.emailTemplates.from,
+            subject: TAPi18n.__('email-smtp-test-subject', { lng: lang }),
+            text: TAPi18n.__('email-smtp-test-text', { lng: lang }),
+          })
+        } else {
+          Email.send({
+            to: user.emails[0].address,
+            from: Accounts.emailTemplates.from,
+            subject: TAPi18n.__('email-smtp-test-subject', { lng: lang }),
+            text: TAPi18n.__('email-smtp-test-text', { lng: lang }),
+          });
+        }
+*/
         Email.send({
           to: user.emails[0].address,
           from: Accounts.emailTemplates.from,
@@ -334,7 +447,7 @@ if (Meteor.isServer) {
     },
 
     getCustomUI() {
-      const setting = Settings.findOne({});
+      const setting = ReactiveCache.getCurrentSetting();
       if (!setting.productName) {
         return {
           productName: '',
@@ -343,6 +456,24 @@ if (Meteor.isServer) {
         return {
           productName: `${setting.productName}`,
         };
+      }
+    },
+
+    isDisableRegistration() {
+      const setting = ReactiveCache.getCurrentSetting();
+      if (setting.disableRegistration === true) {
+        return true;
+      } else {
+        return false;
+      }
+    },
+
+   isDisableForgotPassword() {
+      const setting = ReactiveCache.getCurrentSetting();
+      if (setting.disableForgotPassword === true) {
+        return true;
+      } else {
+        return false;
       }
     },
 
@@ -380,13 +511,25 @@ if (Meteor.isServer) {
       };
     },
 
+    getOauthServerUrl(){
+      return process.env.OAUTH2_SERVER_URL;
+    },
+    getOauthDashboardUrl(){
+      return process.env.DASHBOARD_URL;
+    },
     getDefaultAuthenticationMethod() {
       return process.env.DEFAULT_AUTHENTICATION_METHOD;
     },
 
-    isPasswordLoginDisabled() {
-      return process.env.PASSWORD_LOGIN_ENABLED === 'false';
+    isPasswordLoginEnabled() {
+      return !(process.env.PASSWORD_LOGIN_ENABLED === 'false');
     },
+    isOidcRedirectionEnabled(){
+      return process.env.OIDC_REDIRECTION_ENABLED === 'true' && Object.keys(loadOidcConfig("oidc")).length > 0;
+    },
+    getServiceConfiguration(service){
+      return loadOidcConfig(service);
+      }
   });
 }
 

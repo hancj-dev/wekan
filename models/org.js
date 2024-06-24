@@ -1,3 +1,5 @@
+import { ReactiveCache } from '/imports/reactiveCache';
+
 Org = new Mongo.Collection('org');
 
 /**
@@ -36,11 +38,19 @@ Org.attachSchema(
       optional: true,
       max: 255,
     },
+    orgIsActive: {
+      /**
+       * status of the organization
+       */
+      type: Boolean,
+      optional: true,
+    },
     createdAt: {
       /**
        * creation date of the organization
        */
       type: Date,
+      denyUpdate: false,
       // eslint-disable-next-line consistent-return
       autoValue() {
         if (this.isInsert) {
@@ -68,6 +78,38 @@ Org.attachSchema(
 );
 
 if (Meteor.isServer) {
+  Org.allow({
+    insert(userId, doc) {
+      const user = ReactiveCache.getUser(userId) || ReactiveCache.getCurrentUser();
+      if (user?.isAdmin)
+        return true;
+      if (!user) {
+        return false;
+      }
+      return doc._id === userId;
+    },
+    update(userId, doc) {
+      const user = ReactiveCache.getUser(userId) || ReactiveCache.getCurrentUser();
+      if (user?.isAdmin)
+        return true;
+      if (!user) {
+        return false;
+      }
+      return doc._id === userId;
+    },
+    remove(userId, doc) {
+      const user = ReactiveCache.getUser(userId) || ReactiveCache.getCurrentUser();
+      if (user?.isAdmin)
+        return true;
+      if (!user) {
+        return false;
+      }
+      return doc._id === userId;
+    },
+    fetch: [],
+  });
+
+
   Meteor.methods({
     setCreateOrg(
       orgDisplayName,
@@ -76,14 +118,14 @@ if (Meteor.isServer) {
       orgWebsite,
       orgIsActive,
     ) {
-      if (Meteor.user() && Meteor.user().isAdmin) {
+      if (ReactiveCache.getCurrentUser()?.isAdmin) {
         check(orgDisplayName, String);
         check(orgDesc, String);
         check(orgShortName, String);
         check(orgWebsite, String);
-        check(orgIsActive, String);
+        check(orgIsActive, Boolean);
 
-        const nOrgNames = Org.find({ orgShortName }).count();
+        const nOrgNames = ReactiveCache.getOrgs({ orgShortName }).length;
         if (nOrgNames > 0) {
           throw new Meteor.Error('orgname-already-taken');
         } else {
@@ -97,20 +139,46 @@ if (Meteor.isServer) {
         }
       }
     },
+    setCreateOrgFromOidc(
+      orgDisplayName,
+      orgDesc,
+      orgShortName,
+      orgWebsite,
+      orgIsActive,
+    ) {
+      check(orgDisplayName, String);
+      check(orgDesc, String);
+      check(orgShortName, String);
+      check(orgWebsite, String);
+      check(orgIsActive, Boolean);
 
+      const nOrgNames = ReactiveCache.getOrgs({ orgShortName }).length;
+      if (nOrgNames > 0) {
+        throw new Meteor.Error('orgname-already-taken');
+      } else {
+        Org.insert({
+          orgDisplayName,
+          orgDesc,
+          orgShortName,
+          orgWebsite,
+          orgIsActive,
+        });
+      }
+    },
     setOrgDisplayName(org, orgDisplayName) {
-      if (Meteor.user() && Meteor.user().isAdmin) {
-        check(org, String);
+      if (ReactiveCache.getCurrentUser()?.isAdmin) {
+        check(org, Object);
         check(orgDisplayName, String);
         Org.update(org, {
           $set: { orgDisplayName: orgDisplayName },
         });
+        Meteor.call('setUsersOrgsOrgDisplayName', org._id, orgDisplayName);
       }
     },
 
     setOrgDesc(org, orgDesc) {
-      if (Meteor.user() && Meteor.user().isAdmin) {
-        check(org, String);
+      if (ReactiveCache.getCurrentUser()?.isAdmin) {
+        check(org, Object);
         check(orgDesc, String);
         Org.update(org, {
           $set: { orgDesc: orgDesc },
@@ -119,8 +187,8 @@ if (Meteor.isServer) {
     },
 
     setOrgShortName(org, orgShortName) {
-      if (Meteor.user() && Meteor.user().isAdmin) {
-        check(org, String);
+      if (ReactiveCache.getCurrentUser()?.isAdmin) {
+        check(org, Object);
         check(orgShortName, String);
         Org.update(org, {
           $set: { orgShortName: orgShortName },
@@ -129,12 +197,64 @@ if (Meteor.isServer) {
     },
 
     setOrgIsActive(org, orgIsActive) {
-      if (Meteor.user() && Meteor.user().isAdmin) {
-        check(org, String);
-        check(orgIsActive, String);
+      if (ReactiveCache.getCurrentUser()?.isAdmin) {
+        check(org, Object);
+        check(orgIsActive, Boolean);
         Org.update(org, {
           $set: { orgIsActive: orgIsActive },
         });
+      }
+    },
+    setOrgAllFieldsFromOidc(
+      org,
+      orgDisplayName,
+      orgDesc,
+      orgShortName,
+      orgWebsite,
+      orgIsActive,
+    ) {
+      check(org, Object);
+      check(orgDisplayName, String);
+      check(orgDesc, String);
+      check(orgShortName, String);
+      check(orgWebsite, String);
+      check(orgIsActive, Boolean);
+      Org.update(org, {
+        $set: {
+          orgDisplayName: orgDisplayName,
+          orgDesc: orgDesc,
+          orgShortName: orgShortName,
+          orgWebsite: orgWebsite,
+          orgIsActive: orgIsActive,
+        },
+      });
+      Meteor.call('setUsersOrgsOrgDisplayName', org._id, orgDisplayName);
+    },
+    setOrgAllFields(
+      org,
+      orgDisplayName,
+      orgDesc,
+      orgShortName,
+      orgWebsite,
+      orgIsActive,
+    ) {
+      if (ReactiveCache.getCurrentUser()?.isAdmin) {
+        check(org, Object);
+        check(orgDisplayName, String);
+        check(orgDesc, String);
+        check(orgShortName, String);
+        check(orgWebsite, String);
+        check(orgIsActive, Boolean);
+        Org.update(org, {
+          $set: {
+            orgDisplayName: orgDisplayName,
+            orgDesc: orgDesc,
+            orgShortName: orgShortName,
+            orgWebsite: orgWebsite,
+            orgIsActive: orgIsActive,
+          },
+        });
+        Meteor.call('setUsersOrgsOrgDisplayName', org._id, orgDisplayName);
       }
     },
   });
@@ -143,7 +263,8 @@ if (Meteor.isServer) {
 if (Meteor.isServer) {
   // Index for Organization name.
   Meteor.startup(() => {
-    Org._collection._ensureIndex({ name: -1 });
+    // Org._collection.createIndex({ name: -1 });
+    Org._collection.createIndex({ orgDisplayName: 1 });
   });
 }
 

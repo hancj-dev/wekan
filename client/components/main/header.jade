@@ -10,18 +10,25 @@ template(name="header")
         span
           a(href="{{pathFor 'home'}}")
             span.fa.fa-home
-
         ul.header-quick-access-list
           if currentList
             each currentBoard.lists
               li(class="{{#if $.Session.equals 'currentList' _id}}current{{/if}}")
                 a.js-select-list
-                  = title
+                  +viewer
+                    = title
           else
             each currentUser.starredBoards
               li(class="{{#if $.Session.equals 'currentBoard' _id}}current{{/if}}")
                 a(href="{{pathFor 'board' id=_id slug=slug}}")
-                  = title
+                  +viewer
+                    = title
+        a.js-toggle-desktop-drag-handles(title="{{_ 'show-desktop-drag-handles'}}" alt="{{_ 'show-desktop-drag-handles'}}")
+          i.fa.fa-arrows
+            if isShowDesktopDragHandles
+              i.fa.fa-check-square-o
+            unless isShowDesktopDragHandles
+              i.fa.fa-ban
         #header-new-board-icon
       else
         //-
@@ -31,12 +38,13 @@ template(name="header")
         unless currentSetting.hideLogo
           if currentSetting.customTopLeftCornerLogoImageUrl
             if currentSetting.customTopLeftCornerLogoLinkUrl
-              a(href="{{currentSetting.customTopLeftCornerLogoLinkUrl}}")
+              a(href="{{currentSetting.customTopLeftCornerLogoLinkUrl}}" alt="{{currentSetting.productName}}" title="{{currentSetting.productName}}")
                 img(src="{{currentSetting.customTopLeftCornerLogoImageUrl}}" height="{{#if currentSetting.customTopLeftCornerLogoHeight}}#{currentSetting.customTopLeftCornerLogoHeight}{{else}}27{{/if}}" width="auto" margin="0" padding="0")
             unless currentSetting.customTopLeftCornerLogoLinkUrl
-              img(src="{{currentSetting.customTopLeftCornerLogoImageUrl}}" height="{{#if currentSetting.customTopLeftCornerLogoHeight}}#{currentSetting.customTopLeftCornerLogoHeight}{{else}}27{{/if}}" width="auto" margin="0" padding="0")
+              img(src="{{currentSetting.customTopLeftCornerLogoImageUrl}}" height="{{#if currentSetting.customTopLeftCornerLogoHeight}}#{currentSetting.customTopLeftCornerLogoHeight}{{else}}27{{/if}}" width="auto" margin="0" padding="0" alt="{{currentSetting.productName}}" title="{{currentSetting.productName}}")
           unless currentSetting.customTopLeftCornerLogoImageUrl
-            img(src="{{pathFor '/logo-header.png'}}" alt="")
+            div#headerIsSettingDatabaseCallDone
+              img(src="{{pathFor '/logo-header.png'}}" alt="{{currentSetting.productName}}" title="{{currentSetting.productName}}")
         span.allBoards
           a(href="{{pathFor 'home'}}")
             span.fa.fa-home
@@ -49,10 +57,16 @@ template(name="header")
           each currentUser.starredBoards
             li(class="{{#if $.Session.equals 'currentBoard' _id}}current{{/if}}")
               a(href="{{pathFor 'board' id=_id slug=slug}}")
-                = title
+                +viewer
+                  = title
           else
             li.current.empty {{_ 'quick-access-description'}}
-
+        a.js-toggle-desktop-drag-handles(title="{{_ 'show-desktop-drag-handles'}}" alt="{{_ 'show-desktop-drag-handles'}}")
+          i.fa.fa-arrows
+            if isShowDesktopDragHandles
+              i.fa.fa-check-square-o
+            unless isShowDesktopDragHandles
+              i.fa.fa-ban
       // Next line is used only for spacing at header,
       // there is no visible clickable icon.
       #header-new-board-icon
@@ -62,6 +76,11 @@ template(name="header")
       //  i.fa.fa-plus(title="Create a new board")
 
       +notifications
+
+      if currentSetting.customHelpLinkUrl
+        #header-help
+          a(href="{{currentSetting.customHelpLinkUrl}}", title="{{_ 'help'}}", target="_blank", rel="noopener noreferrer")
+            span.fa.fa-question
 
       +headerUserBar
 
@@ -90,3 +109,5 @@ template(name="offlineWarning")
     p
       i.fa.fa-warning
       | {{_ 'app-is-offline'}}
+
+      a.app-try-reconnect {{_ 'app-try-reconnect'}}

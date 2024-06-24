@@ -1,3 +1,4 @@
+import { TAPi18n } from '/imports/i18n';
 import { CardSearchPagedComponent } from '../../lib/cardSearch';
 import Boards from '../../../models/boards';
 import { Query, QueryErrors } from '../../../config/query-classes';
@@ -131,6 +132,9 @@ class GlobalSearchComponent extends CardSearchPagedComponent {
       operator_has: TAPi18n.__('operator-has'),
       operator_sort: TAPi18n.__('operator-sort'),
       operator_limit: TAPi18n.__('operator-limit'),
+      operator_debug: TAPi18n.__('operator-debug'),
+      operator_org: TAPi18n.__('operator-org'),
+      operator_team: TAPi18n.__('operator-team'),
       predicate_overdue: TAPi18n.__('predicate-overdue'),
       predicate_archived: TAPi18n.__('predicate-archived'),
       predicate_all: TAPi18n.__('predicate-all'),
@@ -151,6 +155,8 @@ class GlobalSearchComponent extends CardSearchPagedComponent {
       predicate_end: TAPi18n.__('predicate-end'),
       predicate_assignee: TAPi18n.__('predicate-assignee'),
       predicate_member: TAPi18n.__('predicate-member'),
+      predicate_selector: TAPi18n.__('predicate-selector'),
+      predicate_projection: TAPi18n.__('predicate-projection'),
     };
 
     let text = '';
@@ -158,40 +164,44 @@ class GlobalSearchComponent extends CardSearchPagedComponent {
       ['# ', 'globalSearch-instructions-heading'],
       ['\n', 'globalSearch-instructions-description'],
       ['\n\n', 'globalSearch-instructions-operators'],
-      ['\n* ', 'globalSearch-instructions-operator-board'],
-      ['\n* ', 'globalSearch-instructions-operator-list'],
-      ['\n* ', 'globalSearch-instructions-operator-swimlane'],
-      ['\n* ', 'globalSearch-instructions-operator-comment'],
-      ['\n* ', 'globalSearch-instructions-operator-label'],
-      ['\n* ', 'globalSearch-instructions-operator-hash'],
-      ['\n* ', 'globalSearch-instructions-operator-user'],
-      ['\n* ', 'globalSearch-instructions-operator-at'],
-      ['\n* ', 'globalSearch-instructions-operator-member'],
-      ['\n* ', 'globalSearch-instructions-operator-assignee'],
-      ['\n* ', 'globalSearch-instructions-operator-creator'],
-      ['\n* ', 'globalSearch-instructions-operator-due'],
-      ['\n* ', 'globalSearch-instructions-operator-created'],
-      ['\n* ', 'globalSearch-instructions-operator-modified'],
-      ['\n* ', 'globalSearch-instructions-operator-status'],
-      ['\n    * ', 'globalSearch-instructions-status-archived'],
-      ['\n    * ', 'globalSearch-instructions-status-public'],
-      ['\n    * ', 'globalSearch-instructions-status-private'],
-      ['\n    * ', 'globalSearch-instructions-status-all'],
-      ['\n    * ', 'globalSearch-instructions-status-ended'],
-      ['\n* ', 'globalSearch-instructions-operator-has'],
-      ['\n* ', 'globalSearch-instructions-operator-sort'],
-      ['\n* ', 'globalSearch-instructions-operator-limit'],
+      ['\n- ', 'globalSearch-instructions-operator-board'],
+      ['\n- ', 'globalSearch-instructions-operator-list'],
+      ['\n- ', 'globalSearch-instructions-operator-swimlane'],
+      ['\n- ', 'globalSearch-instructions-operator-comment'],
+      ['\n- ', 'globalSearch-instructions-operator-label'],
+      ['\n- ', 'globalSearch-instructions-operator-hash'],
+      ['\n- ', 'globalSearch-instructions-operator-user'],
+      ['\n- ', 'globalSearch-instructions-operator-at'],
+      ['\n- ', 'globalSearch-instructions-operator-member'],
+      ['\n- ', 'globalSearch-instructions-operator-assignee'],
+      ['\n- ', 'globalSearch-instructions-operator-creator'],
+      ['\n- ', 'globalSearch-instructions-operator-org'],
+      ['\n- ', 'globalSearch-instructions-operator-team'],
+      ['\n- ', 'globalSearch-instructions-operator-due'],
+      ['\n- ', 'globalSearch-instructions-operator-created'],
+      ['\n- ', 'globalSearch-instructions-operator-modified'],
+      ['\n- ', 'globalSearch-instructions-operator-status'],
+      ['\n    - ', 'globalSearch-instructions-status-archived'],
+      ['\n    - ', 'globalSearch-instructions-status-public'],
+      ['\n    - ', 'globalSearch-instructions-status-private'],
+      ['\n    - ', 'globalSearch-instructions-status-all'],
+      ['\n    - ', 'globalSearch-instructions-status-ended'],
+      ['\n- ', 'globalSearch-instructions-operator-has'],
+      ['\n- ', 'globalSearch-instructions-operator-sort'],
+      ['\n- ', 'globalSearch-instructions-operator-limit'],
       ['\n## ', 'heading-notes'],
-      ['\n* ', 'globalSearch-instructions-notes-1'],
-      ['\n* ', 'globalSearch-instructions-notes-2'],
-      ['\n* ', 'globalSearch-instructions-notes-3'],
-      ['\n* ', 'globalSearch-instructions-notes-3-2'],
-      ['\n* ', 'globalSearch-instructions-notes-4'],
-      ['\n* ', 'globalSearch-instructions-notes-5'],
+      ['\n- ', 'globalSearch-instructions-notes-1'],
+      ['\n- ', 'globalSearch-instructions-notes-2'],
+      ['\n- ', 'globalSearch-instructions-notes-3'],
+      ['\n- ', 'globalSearch-instructions-notes-3-2'],
+      ['\n- ', 'globalSearch-instructions-notes-4'],
+      ['\n- ', 'globalSearch-instructions-notes-5'],
     ].forEach(([prefix, instruction]) => {
-      text += `${prefix}${TAPi18n.__(instruction, tags)}`;
+      text += `${prefix}${TAPi18n.__(instruction, tags)}`
+      // Replace *<text>* with `<text>` so markdown shows correctly
+      .replace(/\*\</, '`<')
+      .replace(/\>\*/, '\>\`')
     });
-
     return text;
   }
 
@@ -219,6 +229,30 @@ class GlobalSearchComponent extends CardSearchPagedComponent {
             }"`,
           );
           document.getElementById('global-search-input').focus();
+        },
+        'click .js-copy-debug-selector'(evt) {
+          /* Get the text field */
+          const selector = document.getElementById("debug-selector");
+
+          try {
+            navigator.clipboard.writeText(selector.textContent);
+            alert("Selector copied to clipboard");
+          } catch(err) {
+            alert("Error copying text: " + err);
+          }
+
+        },
+        'click .js-copy-debug-projection'(evt) {
+          /* Get the text field */
+          const projection = document.getElementById("debug-projection");
+
+          try {
+            navigator.clipboard.writeText(projection.textContent);
+            alert("Projection copied to clipboard");
+          } catch(err) {
+            alert("Error copying text: " + err);
+          }
+
         },
         'click .js-board-title'(evt) {
           evt.preventDefault();

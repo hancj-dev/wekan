@@ -1,17 +1,17 @@
-FROM quay.io/wekan/ubuntu:groovy-20201125.2
+FROM ubuntu:21.10
 LABEL maintainer="sgr"
 
-# 2020-12-03:
-# - Above Ubuntu base image copied from Docker Hub ubuntu:groovy-20201125.2
-#   to Quay to avoid Docker Hub rate limits.
+# 2022-04-25:
+# - gyp does not yet work with Ubuntu 22.04 ubuntu:rolling,
+#   so changing to 21.10. https://github.com/wekan/wekan/issues/4488
 
-ENV BUILD_DEPS="gnupg gosu bsdtar wget curl bzip2 g++ build-essential python git ca-certificates iproute2"
+ENV BUILD_DEPS="gnupg gosu libarchive-tools wget curl bzip2 g++ build-essential python3 git ca-certificates iproute2"
 ENV DEBIAN_FRONTEND=noninteractive
 
 ENV \
     DEBUG=false \
-    NODE_VERSION=v12.22.1 \
-    METEOR_RELEASE=1.10.2 \
+    NODE_VERSION=v14.21.4 \
+    METEOR_RELEASE=METEOR@2.13 \
     USE_EDGE=false \
     METEOR_EDGE=1.5-beta.17 \
     NPM_VERSION=latest \
@@ -20,15 +20,23 @@ ENV \
     SRC_PATH=./ \
     WITH_API=true \
     RESULTS_PER_PAGE="" \
+    DEFAULT_BOARD_ID="" \
     ACCOUNTS_LOCKOUT_KNOWN_USERS_FAILURES_BEFORE=3 \
     ACCOUNTS_LOCKOUT_KNOWN_USERS_PERIOD=60 \
     ACCOUNTS_LOCKOUT_KNOWN_USERS_FAILURE_WINDOW=15 \
     ACCOUNTS_LOCKOUT_UNKNOWN_USERS_FAILURES_BERORE=3 \
     ACCOUNTS_LOCKOUT_UNKNOWN_USERS_LOCKOUT_PERIOD=60 \
     ACCOUNTS_LOCKOUT_UNKNOWN_USERS_FAILURE_WINDOW=15 \
+    ACCOUNTS_COMMON_LOGIN_EXPIRATION_IN_DAYS=90 \
     RICHER_CARD_COMMENT_EDITOR=false \
     CARD_OPENED_WEBHOOK_ENABLED=false \
     ATTACHMENTS_STORE_PATH="" \
+    ATTACHMENTS_UPLOAD_EXTERNAL_PROGRAM="" \
+    ATTACHMENTS_UPLOAD_MIME_TYPES="" \
+    ATTACHMENTS_UPLOAD_MAX_SIZE=0 \
+    AVATARS_UPLOAD_EXTERNAL_PROGRAM="" \
+    AVATARS_UPLOAD_MIME_TYPES="" \
+    AVATARS_UPLOAD_MAX_SIZE=0 \
     MAX_IMAGE_PIXEL="" \
     IMAGE_COMPRESS_RATIO="" \
     NOTIFICATION_TRAY_AFTER_READ_DAYS_BEFORE_REMOVE="" \
@@ -134,23 +142,39 @@ ENV \
     SAML_PUBLIC_CERTFILE="" \
     SAML_IDENTIFIER_FORMAT="" \
     SAML_LOCAL_PROFILE_MATCH_ATTRIBUTE="" \
-    SAML_ATTRIBUTES=""
+    SAML_ATTRIBUTES="" \
+    DEFAULT_WAIT_SPINNER="" \
+    S3=""
+# \
+#    NODE_OPTIONS="--max_old_space_size=4096"
+
+#---------------------------------------------------------------------
+# https://github.com/wekan/wekan/issues/3585#issuecomment-1021522132
+# Add more Node heap:
+#   NODE_OPTIONS="--max_old_space_size=4096"
+# Add more stack:
+#   bash -c "ulimit -s 65500; exec node --stack-size=65500 main.js"
+#---------------------------------------------------------------------
 
 # Install OS
 RUN set -o xtrace \
   && useradd --user-group -m --system --home-dir /home/wekan wekan \
   && apt-get update \
-	&& apt-get install --assume-yes --no-install-recommends apt-utils apt-transport-https ca-certificates 2>&1 \
-	&& apt-get install --assume-yes --no-install-recommends ${BUILD_DEPS}
+  && apt-get install --assume-yes --no-install-recommends apt-utils apt-transport-https ca-certificates 2>&1 \
+  && apt-get install --assume-yes --no-install-recommends ${BUILD_DEPS}
+
+# OLD:
+#  && curl -fsSLO --compressed "https://nodejs.org/dist/$NODE_VERSION/node-$NODE_VERSION-$ARCHITECTURE.tar.xz" \
+#  && curl -fsSLO --compressed "https://nodejs.org/dist/$NODE_VERSION/SHASUMS256.txt.asc" \
 
 # Install NodeJS
 RUN set -o xtrace \
   && cd /tmp \
-  && curl -fsSLO --compressed "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-$ARCHITECTURE.tar.xz" \
-  && curl -fsSLO --compressed "https://nodejs.org/dist/v$NODE_VERSION/SHASUMS256.txt.asc" \
-  && grep " node-v$NODE_VERSION-$ARCHITECTURE.tar.xz\$" SHASUMS256.txt.asc | sha256sum -c - \
-  && tar -xJf "node-v$NODE_VERSION-$ARCHITECTURE.tar.xz" -C /usr/local --strip-components=1 --no-same-owner \
-  && rm "node-v$NODE_VERSION-$ARCHITECTURE.tar.xz" SHASUMS256.txt.asc \
+  && curl -fsSLO --compressed "https://github.com/wekan/node-v14-esm/releases/download/${NODE_VERSION}/node-${NODE_VERSION}-${ARCHITECTURE}.tar.xz" \
+  && curl -fsSLO --compressed "https://github.com/wekan/node-v14-esm/releases/download/${NODE_VERSION}/SHASUMS256.txt" \
+  && grep " node-$NODE_VERSION-$ARCHITECTURE.tar.xz\$" SHASUMS256.txt | sha256sum -c - \
+  && tar -xJf "node-$NODE_VERSION-$ARCHITECTURE.tar.xz" -C /usr/local --strip-components=1 --no-same-owner \
+  && rm "node-$NODE_VERSION-$ARCHITECTURE.tar.xz" SHASUMS256.txt \
   && ln -s /usr/local/bin/node /usr/local/bin/nodejs \
   && mkdir -p /usr/local/lib/node_modules/fibers/.node-gyp /root/.node-gyp/${NODE_VERSION} /home/wekan/.config \
   && npm install -g npm@${NPM_VERSION} \
@@ -172,17 +196,88 @@ RUN set -o xtrace \
 
 ENV PATH=$PATH:/home/wekan/.meteor/
 
-# Copy source dir
 USER root
 
 RUN echo "export PATH=$PATH" >> /etc/environment
 
-RUN set -o xtrace \
-  && mkdir /home/wekan/app
+USER wekan
 
-COPY ${SRC_PATH} /home/wekan/app/
+# Copy source dir
+RUN set -o xtrace \
+  && mkdir -p /home/wekan/app/.meteor \
+  && mkdir -p /home/wekan/app/packages
+
+COPY \
+    .meteor/.finished-upgraders \
+    .meteor/.id \
+    .meteor/cordova-plugins \
+    .meteor/packages \
+    .meteor/platforms \
+    .meteor/release \
+    .meteor/versions \
+    /home/wekan/app/.meteor/
+
+COPY \
+    package.json \
+    settings.json \
+    /home/wekan/app/
+
+COPY \
+    tests \
+    /home/wekan/app/tests/
+
+COPY \
+    packages \
+    /home/wekan/app/packages/
+
+USER root
 
 RUN set -o xtrace \
   && chown -R wekan:wekan /home/wekan/app /home/wekan/.meteor
 
 USER wekan
+
+RUN \
+    set -o xtrace && \
+    # Build app
+    cd /home/wekan/app && \
+    /home/wekan/.meteor/meteor add standard-minifier-js && \
+    /home/wekan/.meteor/meteor npm install && \
+    /home/wekan/.meteor/meteor build --directory /home/wekan/app_build
+
+RUN \
+    set -o xtrace && \
+    cd /home/wekan/app_build/bundle/programs/server/ && \
+    chmod u+w package.json npm-shrinkwrap.json && \
+    npm install && \
+    cd node_modules/fibers && \
+    node build.js
+
+USER root
+# Cleanup
+RUN \
+    set -o xtrace && \
+    apt-get clean -y && \
+    apt-get autoremove -y && \
+    rm -Rf /tmp/* && \
+    rm -Rf /home/wekan/app_build && \
+    rm -Rf /var/cache/apt /var/lib/apt/lists && \
+    rm -Rf /var/lib/apt/lists/*
+
+USER wekan
+
+ENV PORT=3000
+EXPOSE $PORT
+WORKDIR /home/wekan/app
+
+#---------------------------------------------------------------------
+# https://github.com/wekan/wekan/issues/3585#issuecomment-1021522132
+# Add more Node heap:
+#   NODE_OPTIONS="--max_old_space_size=4096"
+# Add more stack:
+#   bash -c "ulimit -s 65500; exec node --stack-size=65500 main.js"
+#---------------------------------------------------------------------
+#TODO:
+#CMD ["bash", "-c", "ulimit -s 65500; exec node --stack-size=65500 /build/main.js"]
+
+CMD ["/home/wekan/.meteor/meteor", "run", "--verbose", "--settings", "settings.json"]

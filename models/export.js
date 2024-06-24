@@ -1,6 +1,11 @@
+import { ReactiveCache } from '/imports/reactiveCache';
 import { Exporter } from './exporter';
+import { Meteor } from 'meteor/meteor';
+
 /* global JsonRoutes */
 if (Meteor.isServer) {
+  import { Picker } from 'meteor/communitypackages:picker';
+
   // todo XXX once we have a real API in place, move that route there
   // todo XXX also  share the route definition between the client and the server
   // so that we could use something like
@@ -22,21 +27,33 @@ if (Meteor.isServer) {
    * @param {string} boardId the ID of the board we are exporting
    * @param {string} authToken the loginToken
    */
-  JsonRoutes.add('get', '/api/boards/:boardId/export', function(req, res) {
+  JsonRoutes.add('get', '/api/boards/:boardId/export', function (req, res) {
     const boardId = req.params.boardId;
     let user = null;
+    let impersonateDone = false;
+    let adminId = null;
     const loginToken = req.query.authToken;
     if (loginToken) {
       const hashToken = Accounts._hashLoginToken(loginToken);
-      user = Meteor.users.findOne({
+      user = ReactiveCache.getUser({
         'services.resume.loginTokens.hashedToken': hashToken,
       });
+      adminId = user._id.toString();
+      impersonateDone = ReactiveCache.getImpersonatedUser({ adminId: adminId });
     } else if (!Meteor.settings.public.sandstorm) {
       Authentication.checkUserId(req.userId);
-      user = Users.findOne({ _id: req.userId, isAdmin: true });
+      user = ReactiveCache.getUser({ _id: req.userId, isAdmin: true });
     }
     const exporter = new Exporter(boardId);
-    if (exporter.canExport(user)) {
+    if (exporter.canExport(user) || impersonateDone) {
+      if (impersonateDone) {
+        ImpersonatedUsers.insert({
+          adminId: adminId,
+          boardId: boardId,
+          reason: 'exportJSON',
+        });
+      }
+
       JsonRoutes.sendResult(res, {
         code: 200,
         data: exporter.build(),
@@ -71,22 +88,34 @@ if (Meteor.isServer) {
   JsonRoutes.add(
     'get',
     '/api/boards/:boardId/attachments/:attachmentId/export',
-    function(req, res) {
+    function (req, res) {
       const boardId = req.params.boardId;
       const attachmentId = req.params.attachmentId;
       let user = null;
+      let impersonateDone = false;
+      let adminId = null;
       const loginToken = req.query.authToken;
       if (loginToken) {
         const hashToken = Accounts._hashLoginToken(loginToken);
-        user = Meteor.users.findOne({
+        user = ReactiveCache.getUser({
           'services.resume.loginTokens.hashedToken': hashToken,
         });
+        adminId = user._id.toString();
+        impersonateDone = ReactiveCache.getImpersonatedUser({ adminId: adminId });
       } else if (!Meteor.settings.public.sandstorm) {
         Authentication.checkUserId(req.userId);
-        user = Users.findOne({ _id: req.userId, isAdmin: true });
+        user = ReactiveCache.getUser({ _id: req.userId, isAdmin: true });
       }
       const exporter = new Exporter(boardId, attachmentId);
-      if (exporter.canExport(user)) {
+      if (exporter.canExport(user) || impersonateDone) {
+        if (impersonateDone) {
+          ImpersonatedUsers.insert({
+            adminId: adminId,
+            boardId: boardId,
+            attachmentId: attachmentId,
+            reason: 'exportJSONattachment',
+          });
+        }
         JsonRoutes.sendResult(res, {
           code: 200,
           data: exporter.build(),
@@ -114,36 +143,65 @@ if (Meteor.isServer) {
    * @param {string} authToken the loginToken
    * @param {string} delimiter delimiter to use while building export. Default is comma ','
    */
-  Picker.route('/api/boards/:boardId/export/csv', function(params, req, res) {
+  Picker.route('/api/boards/:boardId/export/csv', function (params, req, res) {
     const boardId = params.boardId;
     let user = null;
+    let impersonateDone = false;
+    let adminId = null;
     const loginToken = params.query.authToken;
     if (loginToken) {
       const hashToken = Accounts._hashLoginToken(loginToken);
-      user = Meteor.users.findOne({
+      user = ReactiveCache.getUser({
         'services.resume.loginTokens.hashedToken': hashToken,
       });
+      adminId = user._id.toString();
+      impersonateDone = ReactiveCache.getImpersonatedUser({ adminId: adminId });
     } else if (!Meteor.settings.public.sandstorm) {
       Authentication.checkUserId(req.userId);
-      user = Users.findOne({
+      user = ReactiveCache.getUser({
         _id: req.userId,
         isAdmin: true,
       });
     }
     const exporter = new Exporter(boardId);
-    //if (exporter.canExport(user)) {
-    body = params.query.delimiter
-      ? exporter.buildCsv(params.query.delimiter)
-      : exporter.buildCsv();
-    //'Content-Length': body.length,
-    res.writeHead(200, {
-      'Content-Type': params.query.delimiter ? 'text/csv' : 'text/tsv',
-    });
-    res.write(body);
-    res.end();
-    //} else {
-    //  res.writeHead(403);
-    //  res.end('Permission Error');
-    //}
+    if (exporter.canExport(user) || impersonateDone) {
+      if (impersonateDone) {
+        let exportType = 'exportCSV';
+        if( params.query.delimiter == "\t" ) {
+          exportType = 'exportTSV';
+        }
+        ImpersonatedUsers.insert({
+          adminId: adminId,
+          boardId: boardId,
+          reason: exportType,
+        });
+      }
+      
+      let userLanguage = 'en';
+      if (user && user.profile) {
+        userLanguage = user.profile.language
+      }
+      
+      if( params.query.delimiter == "\t" ) {
+        // TSV file
+        res.writeHead(200, {
+          'Content-Type': 'text/tsv',
+        });
+      }
+      else {
+        // CSV file (comma or semicolon)
+        res.writeHead(200, {
+          'Content-Type': 'text/csv; charset=utf-8',
+        });
+        // Adding UTF8 BOM to quick fix MS Excel issue
+        // use Uint8Array to prevent from converting bytes to string
+        res.write(new Uint8Array([0xEF, 0xBB, 0xBF]));
+      }
+      res.write(exporter.buildCsv(params.query.delimiter, userLanguage));
+      res.end();
+    } else {
+      res.writeHead(403);
+      res.end('Permission Error');
+    }
   });
 }

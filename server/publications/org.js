@@ -1,27 +1,30 @@
+import { ReactiveCache } from '/imports/reactiveCache';
+
 Meteor.publish('org', function(query, limit) {
   check(query, Match.OneOf(Object, null));
   check(limit, Number);
 
-  if (!Match.test(this.userId, String)) {
-    return [];
-  }
+  let ret = [];
+  const user = ReactiveCache.getCurrentUser();
 
-  const user = Users.findOne(this.userId);
   if (user && user.isAdmin) {
-    return Org.find(query, {
-      limit,
-      sort: { createdAt: -1 },
-      fields: {
-        displayName: 1,
-        desc: 1,
-        name: 1,
-        website: 1,
-        teams: 1,
-        createdAt: 1,
-        loginDisabled: 1,
+    ret = ReactiveCache.getOrgs(query,
+      {
+        limit,
+        sort: { createdAt: -1 },
+        fields: {
+          orgDisplayName: 1,
+          orgDesc: 1,
+          orgShortName: 1,
+          orgWebsite: 1,
+          orgTeams: 1,
+          createdAt: 1,
+          orgIsActive: 1,
+        }
       },
-    });
+      true,
+    );
   }
 
-  return [];
+  return ret;
 });

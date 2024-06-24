@@ -1,15 +1,6 @@
+import moment from 'moment/min/moment-with-locales';
+import { TAPi18n } from '/imports/i18n';
 import { DatePicker } from '/client/lib/datepicker';
-
-Template.dateBadge.helpers({
-  canModifyCard() {
-    return (
-      Meteor.user() &&
-      Meteor.user().isBoardMember() &&
-      !Meteor.user().isCommentOnly() &&
-      !Meteor.user().isWorker()
-    );
-  },
-});
 
 // editCardReceivedDatePopup
 (class extends DatePicker {
@@ -24,7 +15,7 @@ Template.dateBadge.helpers({
   }
 
   _deleteDate() {
-    this.card.setReceived(null);
+    this.card.unsetReceived();
   }
 }.register('editCardReceivedDatePopup'));
 
@@ -50,7 +41,7 @@ Template.dateBadge.helpers({
   }
 
   _deleteDate() {
-    this.card.setStart(null);
+    this.card.unsetStart();
   }
 }.register('editCardStartDatePopup'));
 
@@ -73,7 +64,7 @@ Template.dateBadge.helpers({
   }
 
   _deleteDate() {
-    this.card.setDue(null);
+    this.card.unsetDue();
   }
 }.register('editCardDueDatePopup'));
 
@@ -96,7 +87,7 @@ Template.dateBadge.helpers({
   }
 
   _deleteDate() {
-    this.card.setEnd(null);
+    this.card.unsetEnd();
   }
 }.register('editCardEndDatePopup'));
 
@@ -113,6 +104,10 @@ const CardDate = BlazeComponent.extendComponent({
     window.setInterval(() => {
       self.now.set(moment());
     }, 60000);
+  },
+
+  showWeek() {
+    return this.date.get().week().toString();
   },
 
   showDate() {
@@ -284,12 +279,25 @@ class CardCustomFieldDate extends CardDate {
     });
   }
 
-  classes() {
-    return 'customfield-date';
+  showWeek() {
+    return this.date.get().week().toString();
+  }
+
+  showDate() {
+    // this will start working once mquandalle:moment
+    // is updated to at least moment.js 2.10.5
+    // until then, the date is displayed in the "L" format
+    return this.date.get().calendar(null, {
+      sameElse: 'llll',
+    });
   }
 
   showTitle() {
-    return '';
+    return `${this.date.get().format('LLLL')}`;
+  }
+
+  classes() {
+    return 'customfield-date';
   }
 
   events() {
@@ -300,31 +308,31 @@ CardCustomFieldDate.register('cardCustomFieldDate');
 
 (class extends CardReceivedDate {
   showDate() {
-    return this.date.get().format('l');
+    return this.date.get().format('L');
   }
 }.register('minicardReceivedDate'));
 
 (class extends CardStartDate {
   showDate() {
-    return this.date.get().format('l');
+    return this.date.get().format('L');
   }
 }.register('minicardStartDate'));
 
 (class extends CardDueDate {
   showDate() {
-    return this.date.get().format('l');
+    return this.date.get().format('L');
   }
 }.register('minicardDueDate'));
 
 (class extends CardEndDate {
   showDate() {
-    return this.date.get().format('l');
+    return this.date.get().format('L');
   }
 }.register('minicardEndDate'));
 
 (class extends CardCustomFieldDate {
   showDate() {
-    return this.date.get().format('l');
+    return this.date.get().format('L');
   }
 }.register('minicardCustomFieldDate'));
 
@@ -341,7 +349,7 @@ class VoteEndDate extends CardDate {
     return classes;
   }
   showDate() {
-    return this.date.get().format('l LT');
+    return this.date.get().format('L LT');
   }
   showTitle() {
     return `${TAPi18n.__('card-end-on')} ${this.date.get().format('LLLL')}`;
@@ -354,3 +362,30 @@ class VoteEndDate extends CardDate {
   }
 }
 VoteEndDate.register('voteEndDate');
+
+class PokerEndDate extends CardDate {
+  onCreated() {
+    super.onCreated();
+    const self = this;
+    self.autorun(() => {
+      self.date.set(moment(self.data().getPokerEnd()));
+    });
+  }
+  classes() {
+    const classes = 'end-date' + ' ';
+    return classes;
+  }
+  showDate() {
+    return this.date.get().format('l LT');
+  }
+  showTitle() {
+    return `${TAPi18n.__('card-end-on')} ${this.date.get().format('LLLL')}`;
+  }
+
+  events() {
+    return super.events().concat({
+      'click .js-edit-date': Popup.open('editPokerEndDate'),
+    });
+  }
+}
+PokerEndDate.register('pokerEndDate');
